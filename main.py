@@ -207,6 +207,6 @@ def save_to_excel(data_list, file_name="vehicle_data.xlsx"):
 # --------------------------
 # MAIN
 # --------------------------
-dealer_url = "https://autostream.lk/author/achalamansara9gmail-com/"
+dealer_url = "https://autostream.lk/author/a-a-auto-mart/"
 ads_data = scrape_dealer(dealer_url)
 save_to_excel(ads_data)
