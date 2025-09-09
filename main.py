@@ -7,6 +7,29 @@ import time
 BASE_URL = "https://autostream.lk"
 
 # --------------------------
+# Normalize scraped labels to match Excel headers
+# --------------------------
+def normalize_label(label):
+    mapping = {
+        "Fuel type": "Fuel Type",
+        "Engine CC / kW": "Engine CC / kw",
+        "Year of Manufacture": "Year of Manufacture",
+        "Transmission": "Transmission",
+        "Body": "Body",
+        "Mileage": "Mileage",
+        "Grade": "Grade",
+        "Exterior Color": "Exterior Color",
+        "Interior Color": "Interior Color",
+        "No. of Owners": "No. of Owners",
+        "Blue-T Grade": "Blue-T Grade",
+        "District": "District",
+        "City": "City",
+        "Year of Reg.": "Year of Reg.",
+    }
+    return mapping.get(label.strip(), label.strip())  # fallback to original
+
+
+# --------------------------
 # Scraper function for a single vehicle ad
 # --------------------------
 def scrape_vehicle(url, dealer_info):
@@ -32,44 +55,51 @@ def scrape_vehicle(url, dealer_info):
     reg_no = soup.find("div", string=lambda s: s and "Registration" in s)
     data["Registration Number"] = reg_no.get_text(strip=True) if reg_no else ""
 
-    # Main attributes
-# --------------------------
-# Main attributes (Body, Mileage, Fuel Type, Engine CC, etc.)
-# --------------------------
+    # --------------------------
+    # Main attributes (Body, Mileage, Fuel Type, Engine CC, etc.)
+    # --------------------------
     for item in soup.select(".single-listing-attribute-boxes .item"):
         label = item.select_one(".label-text")
         value = item.select_one(".value-text")
 
         if label:
-            label_text = label.get_text(strip=True)
+            label_text = normalize_label(label.get_text(strip=True))
             value_text = value.get_text(strip=True) if value else ""
 
             # Save even if value is empty
             data[label_text] = value_text
-
             print(f"    {label_text}: {value_text}")  # Debug
 
-
-    # Additional attributes
+    # --------------------------
+    # Additional attributes (like Grade, Color, etc.)
+    # --------------------------
     for li in soup.select(".stm-single-car-listing-data .data-list-item"):
         label = li.select_one(".item-label")
         value = li.select_one(".heading-font")
         if label and value:
-            data[label.get_text(strip=True)] = value.get_text(strip=True)
+            label_text = normalize_label(label.get_text(strip=True))
+            data[label_text] = value.get_text(strip=True)
+            print(f"    {label_text}: {data[label_text]}")  # Debug
 
-    # Features
+    # --------------------------
+    # Features (grouped checkboxes)
+    # --------------------------
     for group in soup.select(".stm-single-listing-car-features .grouped_checkbox-3"):
         category = group.select_one("h4")
         if not category:
             continue
-        category_name = category.get_text(strip=True)
+        category_name = normalize_label(category.get_text(strip=True))
         features_list = [li.get_text(strip=True) for li in group.select("ul li span") if li.get_text(strip=True)]
         data[category_name] = ", ".join(features_list)
+        print(f"    {category_name}: {data[category_name]}")  # Debug
 
+    # --------------------------
     # Seller Notes
+    # --------------------------
     seller_notes = soup.select_one("section:has(h2:-soup-contains('Seller Notes'))")
     if seller_notes:
         data["Seller Notes"] = seller_notes.get_text(strip=True)
+        print(f"    Seller Notes: {data['Seller Notes']}")  # Debug
 
     return data
 
@@ -117,7 +147,7 @@ def scrape_dealer(dealer_url):
                 if "/listings/" in a_tag["href"]:
                     ad_links.append(a_tag["href"])
 
-        ad_links = list(set(ad_links))
+        ad_links = list(set(ad_links))  # remove duplicates
 
         if not ad_links:
             break
