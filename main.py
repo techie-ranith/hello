@@ -1,105 +1,67 @@
+import time
+import os
 import requests
 from bs4 import BeautifulSoup
 from openpyxl import Workbook, load_workbook
-import os
-import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://autostream.lk"
-
-# --------------------------
-# Normalize scraped labels to match Excel headers
-# --------------------------
-def normalize_label(label):
-    mapping = {
-        "Fuel type": "Fuel Type",
-        "Engine CC / kW": "Engine CC / kw",
-        "Year of Manufacture": "Year of Manufacture",
-        "Transmission": "Transmission",
-        "Body": "Body",
-        "Mileage": "Mileage",
-        "Grade": "Grade",
-        "Exterior Color": "Exterior Color",
-        "Interior Color": "Interior Color",
-        "No. of Owners": "No. of Owners",
-        "Blue-T Grade": "Blue-T Grade",
-        "District": "District",
-        "City": "City",
-        "Year of Reg.": "Year of Reg.",
-    }
-    return mapping.get(label.strip(), label.strip())  # fallback to original
-
 
 # --------------------------
 # Scraper function for a single vehicle ad
 # --------------------------
 def scrape_vehicle(url, dealer_info):
-    print(f"🔹 Scraping vehicle: {url}")  
+    print(f"🔹 Scraping vehicle: {url}")
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
 
     # start with dealer info (copied into every vehicle row)
     data = {**dealer_info, "Ad URL": url}
 
-    # --------------------------
     # Vehicle details
-    # --------------------------
-    vehicle_name = soup.select_one("h1.listing-title")
+# Vehicle Name
+    vehicle_name = soup.select_one("h1.listing-title, h6.title.stm_listing_title")
     data["Vehicle Name"] = vehicle_name.get_text(strip=True) if vehicle_name else ""
 
-    vehicle_price = soup.select_one(".price .heading-font")
+    # Vehicle Price
+    vehicle_price = soup.select_one(".price .heading-font, span.h3")
     data["Vehicle Price"] = vehicle_price.get_text(strip=True) if vehicle_price else ""
 
-    contact_number = soup.select_one(".listing-phone-wrap a[href^='tel:']")
-    data["Contact Number"] = contact_number.get_text(strip=True) if contact_number else ""
-
-    reg_no = soup.find("div", string=lambda s: s and "Registration" in s)
-    data["Registration Number"] = reg_no.get_text(strip=True) if reg_no else ""
-
-    # --------------------------
-    # Main attributes (Body, Mileage, Fuel Type, Engine CC, etc.)
-    # --------------------------
+    # Main attributes (Body, Mileage, Fuel Type, Engine CC)
     for item in soup.select(".single-listing-attribute-boxes .item"):
         label = item.select_one(".label-text")
         value = item.select_one(".value-text")
-
+        
         if label:
-            label_text = normalize_label(label.get_text(strip=True))
-            value_text = value.get_text(strip=True) if value else ""
-
-            # Save even if value is empty
+            label_text = label.get_text(strip=True)
+            # fallback: use the text content of the item if value-text is empty
+            value_text = value.get_text(strip=True) if value else item.get_text(strip=True).replace(label_text, "").strip()
             data[label_text] = value_text
             print(f"    {label_text}: {value_text}")  # Debug
 
-    # --------------------------
-    # Additional attributes (like Grade, Color, etc.)
-    # --------------------------
+    # Additional attributes
     for li in soup.select(".stm-single-car-listing-data .data-list-item"):
         label = li.select_one(".item-label")
         value = li.select_one(".heading-font")
         if label and value:
-            label_text = normalize_label(label.get_text(strip=True))
-            data[label_text] = value.get_text(strip=True)
-            print(f"    {label_text}: {data[label_text]}")  # Debug
+            data[label.get_text(strip=True)] = value.get_text(strip=True)
 
-    # --------------------------
-    # Features (grouped checkboxes)
-    # --------------------------
+    # Features
     for group in soup.select(".stm-single-listing-car-features .grouped_checkbox-3"):
         category = group.select_one("h4")
         if not category:
             continue
-        category_name = normalize_label(category.get_text(strip=True))
+        category_name = category.get_text(strip=True)
         features_list = [li.get_text(strip=True) for li in group.select("ul li span") if li.get_text(strip=True)]
         data[category_name] = ", ".join(features_list)
-        print(f"    {category_name}: {data[category_name]}")  # Debug
 
-    # --------------------------
     # Seller Notes
-    # --------------------------
     seller_notes = soup.select_one("section:has(h2:-soup-contains('Seller Notes'))")
     if seller_notes:
         data["Seller Notes"] = seller_notes.get_text(strip=True)
-        print(f"    Seller Notes: {data['Seller Notes']}")  # Debug
 
     return data
 
@@ -110,11 +72,28 @@ def scrape_vehicle(url, dealer_info):
 def scrape_dealer(dealer_url):
     ads = []
 
-    # scrape dealer info only once
-    print(f"🔎 Scraping dealer info: {dealer_url}")
-    response = requests.get(dealer_url)
-    soup = BeautifulSoup(response.text, "html.parser")
+    # use Selenium to load all ads (clicking "Show more")
+    driver = webdriver.Chrome()
+    driver.get(dealer_url)
 
+    while True:
+        try:
+            show_more = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((
+                    By.XPATH, 
+                    "//a[@class='heading-font']/span[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'show more')]/.."
+                ))
+            )
+            print("🔘 Clicking Show more...")
+            driver.execute_script("arguments[0].click();", show_more)
+            time.sleep(2)  # wait for new ads to load
+        except Exception:
+            print("✅ No more Show more button.")
+            break
+
+
+    # dealer info
+    soup = BeautifulSoup(driver.page_source, "html.parser")
     dealer_info = {}
     dealer_name = soup.select_one(".dealer-info h3")
     dealer_info["Dealer Name"] = dealer_name.get_text(strip=True) if dealer_name else ""
@@ -133,42 +112,28 @@ def scrape_dealer(dealer_url):
 
     print(f"✅ Dealer: {dealer_info}")
 
-    # now go through vehicle pages
-    page = 1
-    while True:
-        url = f"{dealer_url}page/{page}/" if page > 1 else dealer_url
-        print(f"🔎 Scraping dealer page: {url}")
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, "html.parser")
+    # collect ad links
+    ad_links = []
+    for listing in soup.select(".car-listing-row.row.row-3"):
+        for a_tag in listing.find_all("a", href=True):
+            if "/listings/" in a_tag["href"]:
+                ad_links.append(a_tag["href"])
 
-        ad_links = []
-        for listing in soup.select(".car-listing-row.row.row-3"):
-            for a_tag in listing.find_all("a", href=True):
-                if "/listings/" in a_tag["href"]:
-                    ad_links.append(a_tag["href"])
+    driver.quit()
 
-        ad_links = list(set(ad_links))  # remove duplicates
+    ad_links = list(set(ad_links))
+    print(f"🔎 Found {len(ad_links)} ads in total")
 
-        if not ad_links:
-            break
-
-        print(f"    Found {len(ad_links)} ads on page {page}")
-
-        for ad_url in ad_links:
-            if not ad_url.startswith("http"):
-                ad_url = BASE_URL + ad_url
-            try:
-                ad_data = scrape_vehicle(ad_url, dealer_info)
-                ads.append(ad_data)
-                time.sleep(1)  # polite delay
-            except Exception as e:
-                print(f"❌ Failed to scrape {ad_url}: {e}")
-
-        # check next page
-        next_btn = soup.select_one(".heading-font.next")
-        if not next_btn:
-            break
-        page += 1
+    # scrape each ad page
+    for ad_url in ad_links:
+        if not ad_url.startswith("http"):
+            ad_url = BASE_URL + ad_url
+        try:
+            ad_data = scrape_vehicle(ad_url, dealer_info)
+            ads.append(ad_data)
+            time.sleep(1)  # polite delay
+        except Exception as e:
+            print(f"❌ Failed to scrape {ad_url}: {e}")
 
     print(f"✅ Total ads scraped: {len(ads)}")
     return ads
@@ -207,6 +172,6 @@ def save_to_excel(data_list, file_name="vehicle_data.xlsx"):
 # --------------------------
 # MAIN
 # --------------------------
-dealer_url = "https://autostream.lk/author/a-a-auto-mart/"
+dealer_url = "https://autostream.lk/author/autoprogress/"
 ads_data = scrape_dealer(dealer_url)
 save_to_excel(ads_data)
