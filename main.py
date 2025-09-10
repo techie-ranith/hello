@@ -175,21 +175,56 @@ def scrape_dealer(dealer_url):
 # --------------------------
 # Get all dealers
 # --------------------------
+# --------------------------
+# Get all dealers (with "Show more")
+# --------------------------
 def get_dealers():
-    url = f"{BASE_URL}/dealers/"
-    response = requests.get(url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+    driver.get(f"{BASE_URL}/dealers/")
 
+    # Keep clicking "Show more" until none left
+    while True:
+        try:
+            show_more = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[@class='stm-load-more-dealers button']/span[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'show more')]/.."))
+            )
+            print("🔘 Clicking Show more (dealers)...")
+            driver.execute_script("arguments[0].click();", show_more)
+            time.sleep(2)
+        except Exception:
+            print("✅ All dealers loaded.")
+            break
+
+    # Parse full dealer list
+    soup = BeautifulSoup(driver.page_source, "html.parser")
     dealers = []
     for row in soup.select("tr.stm-single-dealer"):
         a = row.select_one(".dealer-info .h4")
-        if a and a["href"]:
+        if a and a.get("href"):
             dealer_name = a.get_text(strip=True)
             dealer_url = a["href"]
+            if not dealer_url.startswith("http"):
+                dealer_url = BASE_URL + dealer_url
             print(f"📌 Dealer found: {dealer_name} -> {dealer_url}")
-            dealers.append(a["href"])
+            dealers.append(dealer_url)
+
+    driver.quit()
     return dealers
+
+
+def sort_by_alphabet(driver):
+    # Click the dropdown
+    dropdown = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.ID, "select2-oxzl-container"))
+    )
+    dropdown.click()
+
+    # Wait for options to appear and click "Alphabet"
+    alphabet_option = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, "//li[contains(text(), 'Alphabet')]"))
+    )
+    alphabet_option.click()
+    print("✅ Sorted dealers by Alphabet")
 
 
 # --------------------------
@@ -228,7 +263,6 @@ if __name__ == "__main__":
     all_ads = []
     dealers = get_dealers()
     print(f"🌐 Found {len(dealers)} dealers")
-
     for dealer_url in dealers:
         try:
             dealer_ads = scrape_dealer(dealer_url)
