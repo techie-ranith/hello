@@ -238,6 +238,7 @@ def scrape_dealer(dealer_url):
     ads.append(dealer_row)
 
     # 2) Collect ad links
+# 2) Collect ad links
     ad_links = []
     for listing in soup.select(".car-listing-row.row.row-3"):
         for a_tag in listing.find_all("a", href=True):
@@ -245,6 +246,17 @@ def scrape_dealer(dealer_url):
                 ad_links.append(a_tag["href"])
 
     driver.quit()
+
+    # Preserve order and remove duplicates
+    seen = set()
+    ordered_links = []
+    for link in ad_links:
+        if link not in seen:
+            seen.add(link)
+            ordered_links.append(link)
+
+    print(f"🔎 Found {len(ordered_links)} ads in total")
+
 
     ad_links = list(set(ad_links))
     print(f"🔎 Found {len(ad_links)} ads in total")
@@ -304,6 +316,6 @@ def save_to_excel(data_list, file_name="vehicle_data3.xlsx"):
 # --------------------------
 # MAIN
 # --------------------------
-dealer_url = "https://autostream.lk/author/dvithanageyahoo-com/"
+dealer_url = "https://autostream.lk/author/achalamansara9gmail-com/"
 ads_data = scrape_dealer(dealer_url)
 save_to_excel(ads_data)
