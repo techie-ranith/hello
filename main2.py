@@ -149,6 +149,14 @@ def scrape_vehicle(url, dealer_info):
 
     vehicle_price = soup.select_one(".price .heading-font, span.h3")
     data["Vehicle Price"] = vehicle_price.get_text(strip=True) if vehicle_price else ""
+    
+    # Vehicle status (Sold / Available)
+    status_tag = soup.select_one("div.special-label.h5")
+    if status_tag and "sold" in status_tag.get_text(strip=True).lower():
+        data["Status"] = "Sold"
+    else:
+        data["Status"] = "Available"
+
 
     # Main attributes (Body, Mileage, Fuel Type, Engine CC)
     for item in soup.select(".single-listing-attribute-boxes .item"):
@@ -242,7 +250,8 @@ def scrape_dealer(dealer_url):
     print(f"🔎 Found {len(ad_links)} ads in total")
 
     # 3) Scrape each ad with dealer_info injected
-    for ad_url in ad_links:
+# 3) Scrape each ad with dealer_info injected
+    for ad_url in ordered_links:
         if not ad_url.startswith("http"):
             ad_url = BASE_URL + ad_url
         try:
@@ -252,6 +261,7 @@ def scrape_dealer(dealer_url):
         except Exception as e:
             print(f"❌ Failed to scrape {ad_url}: {e}")
 
+
     print(f"✅ Total ads scraped: {len(ads)}")
     return ads
 
@@ -259,18 +269,19 @@ def scrape_dealer(dealer_url):
 # --------------------------
 # Save data to Excel
 # --------------------------
-def save_to_excel(data_list, file_name="vehicle_data2.xlsx"):
+def save_to_excel(data_list, file_name="vehicle_data3.xlsx"):
     if not data_list:
         return
 
     headers = [
         "Dealer Name", "Dealership Location", "Sales Hours", "Seller Email", "Dealer Contact Number",
-        "Vehicle Name", "Vehicle Price", "Contact Number", "Registration Number",
+        "Vehicle Name", "Vehicle Price", "Status", "Contact Number", "Registration Number",
         "Body", "Mileage", "Fuel Type", "Engine CC / kw", "Year of Manufacture", "Transmission",
         "Grade", "Exterior Color", "Interior Color", "No. of Owners", "Blue-T Grade",
         "District", "City", "Year of Reg.", "Convenience", "Infotainment", "Safety & Security",
         "Interior & Seats", "Windows & Lighting", "Other Features", "Seller Notes", "Ad URL"
     ]
+
 
     if os.path.exists(file_name):
         wb = load_workbook(file_name)
@@ -293,6 +304,6 @@ def save_to_excel(data_list, file_name="vehicle_data2.xlsx"):
 # --------------------------
 # MAIN
 # --------------------------
-dealer_url = "https://autostream.lk/author/dammika-motor/"
+dealer_url = "https://autostream.lk/author/dvithanageyahoo-com/"
 ads_data = scrape_dealer(dealer_url)
 save_to_excel(ads_data)
